@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:provider/provider.dart';
+import '../providers/music_player_provider.dart';
+import '../models/song.dart';
 
 class MyMusicPage extends StatefulWidget {
   const MyMusicPage({super.key});
@@ -12,11 +15,7 @@ class MyMusicPage extends StatefulWidget {
 class _MyMusicPageState extends State<MyMusicPage>
     with SingleTickerProviderStateMixin {
   late TabController tabController;
-
   static const _channel = MethodChannel('music_scan');
-
-  final AudioPlayer _player = AudioPlayer();
-
   List<Map<String, String>> _songs = [];
   bool _loading = true;
   String? _playingPath;
@@ -29,55 +28,39 @@ class _MyMusicPageState extends State<MyMusicPage>
   }
 
   Future<void> _loadSongs() async {
-  setState(() => _loading = true);
-
-  try {
-    final List result = await _channel.invokeMethod('scanMp3');
-
-    _songs = result.map<Map<String, String>>((item) {
-      final map = Map<String, dynamic>.from(item);
-      return {
-        'title': map['title']?.toString() ?? 'Không tên',
-        'path': map['path']?.toString() ?? '',
-      };
-    }).toList();
-
-  } catch (e) {
-    _songs = [];
-  }
-
-  setState(() => _loading = false);
-}
-
-
-  Future<void> _playSong(Map<String, String> song) async {
-    final path = song['path'];
-    if (path == null) return;
+    setState(() => _loading = true);
 
     try {
-      if (_playingPath == path && _player.playing) {
-        await _player.pause();
-        setState(() {});
-        return;
-      }
+      final List result = await _channel.invokeMethod('scanMp3');
 
-      await _player.setAudioSource(
-        AudioSource.uri(Uri.file(path)),
-      );
-      await _player.play();
-      setState(() => _playingPath = path);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không thể phát file')),
-      );
+      _songs = result.map<Map<String, String>>((item) {
+        final map = Map<String, dynamic>.from(item);
+        return {
+          'title': map['title']?.toString() ?? 'Không tên',
+          'path': map['path']?.toString() ?? '',
+        };
+      }).toList();
+    } catch (e) {
+      _songs = [];
     }
+
+    setState(() => _loading = false);
   }
+
+  void _playSong(Map<String, String> song) {
+  final path = song['path'];
+  if (path == null) return;
+
+  context.read<MusicPlayerProvider>().play(
+        path,
+        song['title'] ?? 'Không tên',
+      );
+}
+
 
   @override
   void dispose() {
     tabController.dispose();
-    _player.dispose();
     super.dispose();
   }
 
@@ -156,7 +139,9 @@ class _MyMusicPageState extends State<MyMusicPage>
         final s = _songs[i];
         final title = s['title'] ?? 'Không tên';
         final path = s['path'];
-        final isPlaying = _playingPath == path && _player.playing;
+        final player = context.watch<MusicPlayerProvider>();
+        final isPlaying = player.isPlaying && player.currentPath == path;
+
 
         return ListTile(
           leading: Container(
@@ -169,10 +154,10 @@ class _MyMusicPageState extends State<MyMusicPage>
           ),
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: const Text('MP3'),
-          trailing: Icon(
-            isPlaying ? Icons.pause_circle : Icons.play_circle,
-          ),
-          onTap: () => _playSong(s),
+          trailing: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle),
+          onTap: () {
+            _playSong(s); // giữ nguyên logic phát nhạc hiện tại
+          },
         );
       },
     );
